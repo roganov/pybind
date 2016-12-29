@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import pytest
 
@@ -38,6 +38,14 @@ def test_nested():
     assert isinstance(x.y, Y)
     assert x.y.a == 1
     assert x.y.b == '123'
+
+
+def test_tuples():
+    Point = Tuple[float, float, Tuple[str, int]]
+
+    p = bind(Point, ['0', '1', ['abc', 3]])
+
+    assert p == (0., 1., ('abc', 3))
 
 
 def test_try_unwrap_optional():

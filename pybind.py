@@ -1,4 +1,4 @@
-from typing import get_type_hints, Optional, Union, Tuple
+from typing import get_type_hints, Union, Tuple, List
 
 
 class PybindError(Exception):
@@ -33,6 +33,10 @@ def try_unwrap_optional(cls):
     return False, cls
 
 
+def is_newtype(cls):
+    return hasattr(cls, '__name__') and hasattr(cls, '__supertype__')
+
+
 def get_binder(cls):
     is_optional, cls = try_unwrap_optional(cls)
     origin = getattr(cls, '__origin__', None)
@@ -41,14 +45,22 @@ def get_binder(cls):
     elif origin is Tuple:
         binders = [get_binder(typ) for typ in cls.__args__]
 
-        def binder(raw_data):
-            try:
-                data = list(raw_data)
-            except Exception:
+        def binder(data):
+            if not isinstance(data, (list, tuple)):
                 raise PybindError('must be convertable to list')
+            data = list(data)
             data += [MISSING] * (len(binders) - len(data))
             return tuple(b(d) for b, d in zip(binders, data))
+    elif origin is List:
+        element_binder = get_binder(cls.__args__[0])
 
+        def binder(data):
+            if not isinstance(data, (list, tuple)):
+                raise PybindError('must be convertable to list')
+            data = list(data)
+            return [element_binder(d) for d in data]
+    elif is_newtype(cls):
+        binder = get_binder(cls.__supertype__)
     else:
         binders = {name: get_binder(type_)
                    for name, type_ in get_type_hints(cls).items()}

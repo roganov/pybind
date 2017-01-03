@@ -1,5 +1,4 @@
-from abc import ABC
-from typing import get_type_hints, Union, Tuple, List, TypeVar, Type, Generic, Any, Optional, Dict, cast, Callable
+from typing import get_type_hints, Union, Tuple, List, TypeVar, Type, Any, Optional, Dict, cast, Callable
 
 
 class PybindError(Exception):
@@ -26,6 +25,14 @@ def make_binder_optional(binder: Binder[T]) -> Binder[Optional[T]]:
     return optional_binder
 
 
+def make_binder_required(binder: Binder[T]) -> Binder[T]:
+    def required_binder(value: Any) -> T:
+        if value is MISSING:
+            raise PybindError('value is missing, but required')
+        return binder(value)
+    return required_binder
+
+
 NoneType = type(None)
 
 
@@ -42,6 +49,13 @@ def try_unwrap_optional(cls: Type[Any]) -> Tuple[bool, Type[Any]]:
 
 def is_newtype(cls: Type[T]) -> bool:
     return hasattr(cls, '__name__') and hasattr(cls, '__supertype__')
+
+
+def is_namedtuple(cls: Type[T]) -> bool:
+    mro = cls.__mro__
+    return len(mro) > 1 and mro[1] is tuple \
+        and hasattr(cls, '_fields') \
+        and hasattr(cls, '_field_types')
 
 
 class BindersFactory:
@@ -70,13 +84,15 @@ class BindersFactory:
             binder = self.create_list_binder(cls)
         elif is_newtype(cls):
             binder = self.create_newtype_binder(cls)
+        elif is_namedtuple(cls):
+            binder = self.created_namedtuple_binder(cls)
         else:
             binder = self.create_custom_class_binder(cls)  # type: ignore
 
         if is_optional:
-            binder = make_binder_optional(binder)
-
-        return binder
+            return make_binder_optional(binder)
+        else:
+            return make_binder_required(binder)
 
     def create_tuple_binder(self, cls: Type[Tuple[Any, ...]]) -> Binder[Tuple[Any, ...]]:
         args: List[Type[Any]] = cast(Any, cls).__args__
@@ -98,7 +114,6 @@ class BindersFactory:
         def binder(data: Any) -> List[T]:
             if not isinstance(data, (list, tuple)):
                 raise PybindError('must be convertable to list')
-            data = list(data)
             return [element_binder(d) for d in data]
         return binder
 
@@ -122,6 +137,43 @@ class BindersFactory:
                 value = binder(raw_value)
                 setattr(inst, name, value)
             return inst
+
+        return binder
+
+    def created_namedtuple_binder(self, cls: Type[T]) -> Binder[T]:
+        annotations = cast(Any, cls)._field_types
+        fields = cast(Any, cls)._fields
+        if set(fields) != annotations.keys():
+            raise PybindError(
+                'some attributes of {cls} are missing type annotations'
+                .format(cls=cls))
+        binders = {name: self.get(type_)
+                   for name, type_ in annotations.items()}
+
+        def binder(data: Any) -> T:
+            kwargs: Dict[str, Any]
+            if isinstance(data, (list, tuple)):
+                # Positional binding.
+                data = list(data)
+                data += [MISSING] * (len(fields) - len(data))
+                kwargs = {
+                    name: binders[name](d)
+                    for name, d in zip(fields, data)
+                }
+            elif isinstance(data, dict):
+                # Named binding.
+                kwargs = {
+                    name: binder(data.get(name, MISSING))
+                    for name, binder in binders.items()
+                }
+            else:
+                raise PybindError('unable to bind {data} to {cls}'
+                                  .format(data=data, cls=cls))
+            try:
+                return cls(**kwargs)  # type: ignore
+            except Exception:
+                raise PybindError('exception when creating {cls}'
+                                  .format(cls=cls))
 
         return binder
 

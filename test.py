@@ -1,43 +1,55 @@
-from typing import Optional, Tuple, List, NewType
+from typing import Optional, Tuple, List, NewType, NamedTuple
 
 import pytest
 
-from pybind import bind, try_unwrap_optional
+from pybind import bind, try_unwrap_optional, is_namedtuple
 
 
-def test():
-    class X:
-        x: int
-        y: bool
+class TestUserClass:
+    def test(self):
+        class X:
+            x: int
+            y: bool
 
-    x = bind(X, {'x': 1, 'y': False})
+        x = bind(X, {'x': 1, 'y': False})
 
-    assert isinstance(x, X)
-    assert x.x == 1
-    assert x.y is False
+        assert isinstance(x, X)
+        assert x.x == 1
+        assert x.y is False
 
+    def test_optional(self):
+        class X:
+            x: Optional[int]
 
-def test_optional():
-    class X:
-        x: Optional[int]
+        assert bind(X, {}).x is None
+        assert bind(X, {'x': 1}).x == 1
 
-    assert bind(X, {}).x is None
-    assert bind(X, {'x': 1}).x == 1
+    def test_nested(self):
+        class Y:
+            a: int
+            b: str
 
+        class X:
+            y: Y
 
-def test_nested():
-    class Y:
-        a: int
-        b: str
+        x = bind(X, {'y': {'a': 1, 'b': '123'}})
 
-    class X:
-        y: Y
+        assert isinstance(x.y, Y)
+        assert x.y.a == 1
+        assert x.y.b == '123'
 
-    x = bind(X, {'y': {'a': 1, 'b': '123'}})
+    def test_subclass(self):
+        class X:
+            x: int
 
-    assert isinstance(x.y, Y)
-    assert x.y.a == 1
-    assert x.y.b == '123'
+        class XX(X):
+            xx: str
+
+        xx = bind(XX, {'x': '1', 'xx': 'xx'})
+
+        assert isinstance(xx, XX)
+        assert xx.x == 1
+        assert xx.xx == 'xx'
 
 
 def test_tuples():
@@ -72,3 +84,48 @@ def test_try_unwrap_optional():
     assert try_unwrap_optional(int) == (False, int)
     assert try_unwrap_optional(Optional[int]) == (True, int)
     assert try_unwrap_optional(Optional[Optional[int]]) == (True, int)
+
+
+class TestNamedTuple:
+
+    class X(NamedTuple):
+        a: int
+        b: str
+
+    class XX(X):
+        c: str
+
+    class XOpt(NamedTuple):
+        a: int
+        b: Optional[str]
+
+    def test_positional(self):
+        x = bind(self.X, [1, 'b'])
+
+        assert x == self.X(a=1, b='b')
+
+    def test_positional_with_optional(self):
+        x = bind(self.XOpt, [1])
+        assert x == self.XOpt(a=1, b=None)
+
+    def test_named(self):
+        x = bind(self.X, {'a': '1', 'b': 'b'})
+
+        assert x == self.X(a=1, b='b')
+
+    def test_named_with_optional(self):
+        x = bind(self.XOpt, {'a': '1'})
+        assert x == self.XOpt(a=1, b=None)
+
+    @pytest.mark.skip
+    def test_subclass(self):
+        xx = bind(self.XX, {'a': '1', 'b': 'b', 'c': 'c'})
+
+        assert xx == self.XX(a=1, b='b', c='c')
+
+
+def test_isnamedtuple():
+    N = NamedTuple('N', [('a', str)])
+
+    assert is_namedtuple(N)
+    assert not is_namedtuple(tuple)

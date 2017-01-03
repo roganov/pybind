@@ -52,7 +52,7 @@ def is_newtype(cls: Type[T]) -> bool:
 
 
 def is_namedtuple(cls: Type[T]) -> bool:
-    mro = cls.__mro__
+    mro = getattr(cls, '__mro__', ())
     return len(mro) > 1 and mro[1] is tuple \
         and hasattr(cls, '_fields') \
         and hasattr(cls, '_field_types')
@@ -77,22 +77,38 @@ class BindersFactory:
 
         binder: Binder[Any]
         if cls in (str, bool, int, float):
-            binder = cls  # type: ignore
+            binder = self.create_basic_binder(cls)  # type: ignore
         elif origin is Tuple:
             binder = self.create_tuple_binder(cls)
         elif origin is List:
             binder = self.create_list_binder(cls)
+        elif origin is Union:
+            binder = self.create_union_binder(cls)
         elif is_newtype(cls):
             binder = self.create_newtype_binder(cls)
         elif is_namedtuple(cls):
             binder = self.created_namedtuple_binder(cls)
+        elif cls is Any:
+            binder = self.create_any_binder()
         else:
             binder = self.create_custom_class_binder(cls)  # type: ignore
 
         if is_optional:
-            return make_binder_optional(binder)
+            binder = make_binder_optional(binder)
         else:
-            return make_binder_required(binder)
+            binder = make_binder_required(binder)
+        return binder
+
+    def create_basic_binder(self, cls: Callable[[Any], T]) -> Binder[T]:
+        def binder(data: Any) -> T:
+            try:
+                return cls(data)
+            except Exception:
+                raise PybindError('unable to bind {data} to {cls}'
+                                  .format(data=data,
+                                          cls=cls))
+
+        return binder
 
     def create_tuple_binder(self, cls: Type[Tuple[Any, ...]]) -> Binder[Tuple[Any, ...]]:
         args: List[Type[Any]] = cast(Any, cls).__args__
@@ -176,6 +192,24 @@ class BindersFactory:
                                   .format(cls=cls))
 
         return binder
+
+    def create_union_binder(self, cls: Type[T]) -> Binder[T]:
+        union_types = cast(Any, cls).__args__
+        binders = [self.get(t) for t in union_types]
+
+        def binder(data: Any) -> T:
+            for b in binders:
+                try:
+                    return b(data)
+                except PybindError:
+                    continue
+            raise PybindError('unable to bind {data} to {cls}'
+                              .format(data=data, cls=cls))
+
+        return binder
+
+    def create_any_binder(self) -> Binder[Any]:
+        return lambda x: x
 
 
 def bind(cls: Type[T], data: Any) -> T:

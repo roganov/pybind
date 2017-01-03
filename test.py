@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, List, NewType, NamedTuple
+from typing import Optional, Tuple, List, NewType, NamedTuple, Union, Any
 
 import pytest
 
@@ -122,6 +122,17 @@ class TestNamedTuple:
         xx = bind(self.XX, {'a': '1', 'b': 'b', 'c': 'c'})
 
         assert xx == self.XX(a=1, b='b', c='c')
+
+
+def test_union():
+    U = Union[int, str]
+
+    assert bind(U, '1') == 1
+    assert bind(U, 'abc') == 'abc'
+
+
+def test_any():
+    assert bind(Any, {'foo': 'bar'}) == {'foo': 'bar'}
 
 
 def test_isnamedtuple():

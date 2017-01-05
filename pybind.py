@@ -1,14 +1,26 @@
+import enum
+import inspect
 from typing import get_type_hints, Union, Tuple, List, TypeVar, Type, Any, Optional, Dict, cast, Callable
+from decimal import Decimal
+
+import datetime
 
 
 class PybindError(Exception):
+    """Binding failed"""
     pass
 
+
+class ConfigError(Exception):
+    """Some kind of configuration error, for example
+    when binding target is not possible to bind to.
+    """
 
 MISSING = object()
 
 
 T = TypeVar('T')
+TEnum = TypeVar('TEnum', bound=enum.Enum)
 
 
 Binder = Callable[[Any], T]
@@ -53,6 +65,8 @@ def is_newtype(cls: Type[T]) -> bool:
 
 def is_namedtuple(cls: Type[T]) -> bool:
     mro = getattr(cls, '__mro__', ())
+    # It's kind of crappy but there is apparently no
+    # better way to find out if a type is a typing.NamedTuple.
     return len(mro) > 1 and mro[1] is tuple \
         and hasattr(cls, '_fields') \
         and hasattr(cls, '_field_types')
@@ -63,6 +77,19 @@ class BindersFactory:
 
     def __init__(self) -> None:
         self._cache = {}
+        self._binders_registry = {
+            str: self.create_converting_binder(str),
+            bool: self.create_converting_binder(bool),
+            int: self.create_converting_binder(int),
+            float: self.create_converting_binder(float),
+            Decimal: self.create_converting_binder(Decimal),
+            datetime.date: self.create_date_binder('%Y-%m-%d'),
+            datetime.datetime: self.create_datetime_binder('%Y-%m-%dT%H:%M:%S'),
+        }
+
+    def register_binder(self, cls: Type[T], binder: Binder[T]) -> None:
+        self._cache = {}
+        self._binders_registry[cls] = binder
 
     def get(self, cls: Type[T]) -> Binder[T]:
         try:
@@ -76,8 +103,8 @@ class BindersFactory:
         origin = getattr(cls, '__origin__', None)
 
         binder: Binder[Any]
-        if cls in (str, bool, int, float):
-            binder = self.create_basic_binder(cls)  # type: ignore
+        if cls in self._binders_registry:
+            binder = self._binders_registry[cls]  # type: ignore
         elif origin is Tuple:
             binder = self.create_tuple_binder(cls)
         elif origin is List:
@@ -90,6 +117,8 @@ class BindersFactory:
             binder = self.created_namedtuple_binder(cls)
         elif cls is Any:
             binder = self.create_any_binder()
+        elif issubclass(cls, enum.Enum):
+            binder = self.create_enum_binder(cls)
         else:
             binder = self.create_custom_class_binder(cls)  # type: ignore
 
@@ -99,7 +128,7 @@ class BindersFactory:
             binder = make_binder_required(binder)
         return binder
 
-    def create_basic_binder(self, cls: Callable[[Any], T]) -> Binder[T]:
+    def create_converting_binder(self, cls: Callable[[Any], T]) -> Binder[T]:
         def binder(data: Any) -> T:
             try:
                 return cls(data)
@@ -138,6 +167,13 @@ class BindersFactory:
         return self.get(sup)
 
     def create_custom_class_binder(self, cls: Callable[..., T]) -> Binder[T]:
+        if inspect.isabstract(cls):
+            raise ConfigError('abstract classes are not supported')
+        has_default_constructor = cls.__init__ is object.__init__  # type: ignore
+        if not has_default_constructor:
+            raise PybindError('{cls} must have default constructor'
+                              .format(cls=cls))
+
         binders: Dict[str, Binder[Any]] = \
             {name: self.get(type_)
              for name, type_ in get_type_hints(cls).items()}
@@ -210,6 +246,37 @@ class BindersFactory:
 
     def create_any_binder(self) -> Binder[Any]:
         return lambda x: x
+
+    def create_date_binder(self, date_format: str) -> Binder[datetime.date]:
+        def binder(data: Any) -> datetime.date:
+            try:
+                return datetime.datetime.strptime(str(data), date_format).date()
+            except (ValueError, TypeError):
+                raise PybindError()
+        return binder
+
+    def create_datetime_binder(self, date_format: str) -> Binder[datetime.datetime]:
+        def binder(data: Any) -> datetime.datetime:
+            try:
+                return datetime.datetime.strptime(str(data), date_format)
+            except (ValueError, TypeError):
+                raise PybindError()
+        return binder
+
+    def create_enum_binder(self, cls: Type[TEnum]) -> Binder[TEnum]:
+        if issubclass(cls, enum.IntEnum):
+            def binder(data: Any) -> TEnum:
+                try:
+                    return cls(int(data))
+                except (ValueError, TypeError):
+                    raise PybindError()
+        else:
+            def binder(data: Any) -> TEnum:
+                try:
+                    return cls(data)
+                except (ValueError, TypeError):
+                    raise PybindError()
+        return binder
 
 
 def bind(cls: Type[T], data: Any) -> T:

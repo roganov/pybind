@@ -1,3 +1,6 @@
+from datetime import datetime, date
+from decimal import Decimal
+from enum import Enum, IntEnum
 from typing import Optional, Tuple, List, NewType, NamedTuple, Union, Any
 
 import pytest
@@ -133,6 +136,35 @@ def test_union():
 
 def test_any():
     assert bind(Any, {'foo': 'bar'}) == {'foo': 'bar'}
+
+
+def test_decimal():
+    assert bind(Decimal, '1.1') == Decimal('1.1')
+
+
+def test_datetime():
+    expected = datetime(year=2016, month=1, day=1, hour=0, minute=0)
+    assert bind(datetime, '2016-01-01T00:00:00') == expected
+    # TODO: with seconds
+
+
+def test_date():
+    assert bind(date, '2016-01-01') == date(year=2016, month=1, day=1)
+
+
+def test_enum():
+    class X(Enum):
+        a = '1'
+
+    assert bind(X, '1') == X.a
+
+
+def test_int_enum():
+    class X(IntEnum):
+        a = 1
+        b = 2
+
+    assert bind(X, '1') == X.a
 
 
 def test_isnamedtuple():

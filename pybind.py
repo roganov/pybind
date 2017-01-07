@@ -117,8 +117,8 @@ class BindersFactory:
             binder = self.created_namedtuple_binder(cls)
         elif cls is Any:
             binder = self.create_any_binder()
-        elif issubclass(cls, enum.Enum):
-            binder = self.create_enum_binder(cls)
+        elif isinstance(cls, type) and issubclass(cls, enum.Enum):
+            binder = self.create_enum_binder(cls)  # type: ignore
         else:
             binder = self.create_custom_class_binder(cls)  # type: ignore
 
@@ -141,14 +141,24 @@ class BindersFactory:
 
     def create_tuple_binder(self, cls: Type[Tuple[Any, ...]]) -> Binder[Tuple[Any, ...]]:
         args: List[Type[Any]] = cast(Any, cls).__args__
-        binders = [self.get(typ) for typ in args]
+        is_variable_length_tuple = len(args) == 2 and args[1] is Ellipsis
+        if is_variable_length_tuple:
+            element_binder = self.get(args[0])
 
-        def binder(data: Any) -> Tuple[Any, ...]:
-            if not isinstance(data, (list, tuple)):
-                raise PybindError('must be convertable to list')
-            data = list(data)
-            data += [MISSING] * (len(binders) - len(data))
-            return tuple(b(d) for b, d in zip(binders, data))
+            def binder(data: Any) -> Tuple[Any, ...]:
+                if not isinstance(data, (list, tuple)):
+                    raise PybindError('must be convertable to list')
+                return tuple(element_binder(d) for d in data)
+
+        else:
+            binders = [self.get(typ) for typ in args]
+
+            def binder(data: Any) -> Tuple[Any, ...]:
+                if not isinstance(data, (list, tuple)):
+                    raise PybindError('must be convertable to list')
+                data = list(data)
+                data += [MISSING] * (len(binders) - len(data))
+                return tuple(b(d) for b, d in zip(binders, data))
 
         return binder
 

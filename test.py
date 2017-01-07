@@ -5,7 +5,7 @@ from typing import Optional, Tuple, List, NewType, NamedTuple, Union, Any
 
 import pytest
 
-from pybind import bind, try_unwrap_optional, is_namedtuple
+from pybind import bind, try_unwrap_optional, is_namedtuple, PybindError
 
 
 class TestUserClass:
@@ -172,3 +172,14 @@ def test_isnamedtuple():
 
     assert is_namedtuple(N)
     assert not is_namedtuple(tuple)
+
+
+def test_variable_length_tuple():
+    xs = bind(Tuple[int, ...], ['1', '2', '3'])
+    assert xs == (1, 2, 3)
+
+    xs = bind(Tuple[str, ...], [])
+    assert xs == ()
+
+    with pytest.raises(PybindError):
+        bind(Tuple[str, ...], 'not a list or tuple')

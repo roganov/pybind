@@ -78,7 +78,7 @@ class BindersFactory:
     def __init__(self) -> None:
         self._cache = {}
         self._binders_registry = {
-            str: self.create_converting_binder(str),
+            str: nonwhitespace_string_binder,
             bool: self.create_converting_binder(bool),
             int: self.create_converting_binder(int),
             float: self.create_converting_binder(float),
@@ -130,6 +130,8 @@ class BindersFactory:
 
     def create_converting_binder(self, cls: Callable[[Any], T]) -> Binder[T]:
         def binder(data: Any) -> T:
+            if data is None:
+                raise PybindError('cannot bind None value')
             try:
                 return cls(data)
             except Exception:
@@ -289,5 +291,19 @@ class BindersFactory:
         return binder
 
 
+def nonwhitespace_string_binder(data: Any) -> str:
+    if data is None:
+        raise PybindError('required')
+    data = str(data).strip()
+    if data == '':
+        raise PybindError('required')
+    return data
+
+
 def bind(cls: Type[T], data: Any) -> T:
     return BindersFactory().get(cls)(data)
+
+
+# Ideas:
+# - union validator
+# - default values

@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import datetime, date
 from decimal import Decimal
 from enum import Enum, IntEnum
@@ -183,3 +184,21 @@ def test_variable_length_tuple():
 
     with pytest.raises(PybindError):
         bind(Tuple[str, ...], 'not a list or tuple')
+
+
+@contextmanager
+def invalid_as(error_code):
+    with pytest.raises(PybindError) as excinfo:
+        yield
+    assert excinfo.value.args[0] == error_code
+
+
+class TestStringBinding:
+
+    def test_None_invalid(self):
+        with invalid_as('required'):
+            bind(str, None)
+
+    def test_whitespaces_invalid(self):
+        with invalid_as('required'):
+            bind(str, ' \n \t')

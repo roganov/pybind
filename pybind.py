@@ -1,9 +1,12 @@
-import enum
-import inspect
-from typing import get_type_hints, Union, Tuple, List, TypeVar, Type, Any, Optional, Dict, cast, Callable
-from decimal import Decimal
-
 import datetime
+import inspect
+from decimal import Decimal
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, \
+    Union, cast, get_type_hints
+
+import enum
+
+from errors import Errors
 
 
 class PybindError(Exception):
@@ -104,7 +107,7 @@ class BindersFactory:
 
         binder: Binder[Any]
         if cls in self._binders_registry:
-            binder = self._binders_registry[cls]  # type: ignore
+            binder = self._binders_registry[cls]
         elif origin is Tuple:
             binder = self.create_tuple_binder(cls)
         elif origin is List:
@@ -118,15 +121,15 @@ class BindersFactory:
         elif cls is Any:
             binder = self.create_any_binder()
         elif isinstance(cls, type) and issubclass(cls, enum.Enum):
-            binder = self.create_enum_binder(cls)  # type: ignore
+            binder = self.create_enum_binder(cls)
         else:
-            binder = self.create_custom_class_binder(cls)  # type: ignore
+            binder = self.create_custom_class_binder(cls)
 
         if is_optional:
             binder = make_binder_optional(binder)
         else:
             binder = make_binder_required(binder)
-        return binder
+        return binder  # type: ignore
 
     def create_converting_binder(self, cls: Callable[[Any], T]) -> Binder[T]:
         def binder(data: Any) -> T:
@@ -248,7 +251,7 @@ class BindersFactory:
         def binder(data: Any) -> T:
             for b in binders:
                 try:
-                    return b(data)
+                    return b(data)  # type: ignore
                 except PybindError:
                     continue
             raise PybindError('unable to bind {data} to {cls}'
@@ -297,7 +300,7 @@ def nonwhitespace_string_binder(data: Any) -> str:
     data = str(data).strip()
     if data == '':
         raise PybindError('required')
-    return data
+    return data  # type: ignore
 
 
 def bind(cls: Type[T], data: Any) -> T:

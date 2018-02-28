@@ -1,0 +1,33 @@
+- Binders should accept an object with value, possible configuration and other
+- Different source of data to bind: bind_json, bind_formdata, ...
+- Configuration option to ignore binding or validation errors if Optional[T] or
+  there is default value
+- Configuration for binders (e.g. date format)
+- Strings: empty, blank and None
+- Generic configuration format for whole object and fields
+    - Only for classes?
+    - Binder format
+    - Validators
+    ...
+- Error messages: error codes, classes that resolve error codes and inline
+  messages
+- Disable cache
+!!!! Think about inheritance
+
+
+
+class UserRegistrationForm:
+
+    email: str
+    password: str
+    birthday: date
+
+    field('email').validate(Email())
+    field('password').validate(Password())
+    (field('birthday')
+        .binding_config(format='%Y/%m/%d')
+        .validate(Range(gt=date(2017, 01, 01))
+        .validate_by_symbol('is_adult_validator')
+    )
+
+

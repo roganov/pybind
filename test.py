@@ -121,7 +121,7 @@ class TestNamedTuple:
         x = bind(self.XOpt, {'a': '1'})
         assert x == self.XOpt(a=1, b=None)
 
-    @pytest.mark.skip
+    @pytest.mark.xfail
     def test_subclass(self):
         xx = bind(self.XX, {'a': '1', 'b': 'b', 'c': 'c'})
 
@@ -202,3 +202,9 @@ class TestStringBinding:
     def test_whitespaces_invalid(self):
         with invalid_as('required'):
             bind(str, ' \n \t')
+
+
+
+def test_bind_raw_dict():
+    d = bind(dict, {1: 1})
+    assert d == {1: 1}
